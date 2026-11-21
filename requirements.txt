@@ -1,28 +1,24 @@
-# QEC Challenge — requirements 
-# Resonance server URL: https://resonance.iqm.tech
+# Qrisp-track surface-code QEC on IQM Emerald — dependencies
+# Python >= 3.11.  Resonance server: https://resonance.iqm.tech
+#
+#   python -m venv .venv
+#   .venv/Scripts/python -m pip install -r requirements.txt      # Windows
+#   .venv/bin/python     -m pip install -r requirements.txt      # Linux/Mac
 
-# --- IQM hardware access (Resonance) ---
-# [qiskit] -> iqm.qiskit_iqm (IQMProvider)
-# [qrisp]  -> iqm.qrisp_iqm  (DetectorExperiment, IQMBackend, vf2pp_layout, ...)
-iqm-client[qiskit,qrisp]==35.0.3
-
-# --- Circuit frameworks ---
-qiskit==2.1.2                  # iqm-client 35.0.3 requires qiskit < 2.2
-qiskit-aer==0.17.2
+# --- IQM hardware access (Resonance) + Qrisp integration ---
+iqm-client[qrisp]==35.0.3      # provides iqm.qrisp_iqm (IQMBackend, DetectorExperiment, vf2pp_layout)
 qrisp==0.9.9
-jax==0.7.1
-jaxlib==0.7.1
 
-# --- Simulation & decoding ---
-stim==1.16.0
-pymatching==2.4.0
-numpy==2.4.6
+# --- circuit definition / conversion ---
+stim==1.16.0                   # surface-code circuit generation + detector error models
+qiskit==2.1.2                  # imported by the scaffold (surface_code.py); iqm-client needs qiskit<2.2
 
-# --- Plotting / notebooks ---
-matplotlib==3.11.2
+# --- decoding ---
+pymatching==2.4.0              # MWPM and correlated MWPM
+ldpc==2.4.1                    # BP+OSD decoder (optional; needs numpy<=2.2.6)
+beliefmatching==0.2.0          # belief-matching + DEM->check-matrix helpers (optional)
+numpy==2.2.6                   # pinned for ldpc compatibility
 
-# --- Calibration-aware qubit selection (iqm_utils/get_calibration_data.py) ---
-iqm-qubit-selector
-
-# --- Optional: pulse-level extension (needs a paid Resonance organisation, ask your mentors!) ---
-# iqm-pulla==14.0.3
+# --- fitting + plots ---
+scipy                          # epsilon_L fit (curve_fit)
+matplotlib                     # P_L vs rounds figures + PDF reports

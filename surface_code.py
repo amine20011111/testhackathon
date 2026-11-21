@@ -100,8 +100,28 @@ def make_stim_circuit(
     -------
     stim.Circuit
     """
+    basis = basis.upper()
+    if basis not in ("Z", "X"):
+        raise ValueError(f"basis must be 'Z' or 'X', got {basis!r}")
+    if rounds < 1:
+        raise ValueError(f"rounds must be >= 1, got {rounds}")
 
-    return
+    code_task = f"surface_code:rotated_memory_{basis.lower()}"
+
+    # Noise kwargs. None -> noiseless (hardware circuit); dict -> simulation/DEM.
+    noise_kwargs = dict(noise) if noise else {}
+
+    # NOTE (Qrisp track): we intentionally generate the standard WITH-RESET
+    # circuit, i.e. we keep the MR gates. stim_to_detector_experiment(..., no_reset=True)
+    # requires MR to be present so it can drop the resets and rewrite the
+    # detectors to the no-reset form (m'_j XOR m'_prev). Do NOT strip resets here.
+    circuit = stim.Circuit.generated(
+        code_task,
+        distance=distance,
+        rounds=rounds,
+        **noise_kwargs,
+    )
+    return circuit
 
 def get_circuit_info(circuit: stim.Circuit) -> dict:
     """

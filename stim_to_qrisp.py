@@ -22,7 +22,7 @@ def _analyse(flat: stim.Circuit, no_reset: bool):
     dets, obs = [], {}
     for inst in flat:
         name = inst.name
-        if name in ("M", "MR"):
+        if name in ("M", "MR", "MX"):
             for t in inst.targets_copy():
                 j = len(meas_q)
                 meas_q.append(t.value)
@@ -75,14 +75,22 @@ def stim_to_detector_experiment(circ: stim.Circuit, no_reset: bool = True):
                     if t in touched:
                         reset(q[pos[t]])
                     touched.add(t)
+            elif name == "RX":
+                for t in tg:                       # reset (if already live) then H -> |+>
+                    if t in touched:
+                        reset(q[pos[t]])
+                    h(q[pos[t]])
+                    touched.add(t)
             elif name in GATES_1Q:
                 for t in tg:
                     GATES_1Q[name](q[pos[t]]); touched.add(t)
             elif name == "CX":
                 for a, b in zip(tg[::2], tg[1::2]):
                     cx(q[pos[a]], q[pos[b]]); touched |= {a, b}
-            elif name in ("M", "MR"):
+            elif name in ("M", "MR", "MX"):
                 for t in tg:
+                    if name == "MX":               # X-basis readout: H then Z-measure
+                        h(q[pos[t]])
                     m.append(measure(q[pos[t]]))
                     if name == "MR" and not no_reset:
                         reset(q[pos[t]])
