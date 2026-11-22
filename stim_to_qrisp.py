@@ -8,10 +8,12 @@ reference sample of the rewritten noiseless circuit.
 """
 import stim
 from iqm.qrisp_iqm import DetectorExperiment
-from qrisp import QuantumArray, QuantumBool, cx, h, measure, parity, reset
+from qrisp import QuantumArray, QuantumBool, cx, h, measure, parity, reset, x, y, z
 from qrisp.misc.stim_tools import stim_noise
 
-GATES_1Q = {"H": h}
+# H plus the Pauli gates (X/Y/Z) needed for randomized-compiling (twirling):
+# twirled circuits wrap every CX with random Pauli layers.
+GATES_1Q = {"H": h, "X": x, "Y": y, "Z": z}
 NOISE = {"DEPOLARIZE1", "DEPOLARIZE2", "X_ERROR", "Z_ERROR", "Y_ERROR"}
 SKIP = {"TICK", "QUBIT_COORDS", "SHIFT_COORDS", "DETECTOR", "OBSERVABLE_INCLUDE"}
 

@@ -193,6 +193,7 @@ def run_qrisp(
     noise: dict      = None,
     dd: bool         = False,
     pin_qubits: list = None,
+    twirl_seed: int  = None,
 ) -> dict:
     """
     Build in qrisp. Runs the surface code on IQM Emerald via IQM Resonance.
@@ -226,6 +227,15 @@ def run_qrisp(
     # comes from the QPU); pass a noise model for a meaningful local simulation.
     stim_circ  = make_stim_circuit(distance, rounds, basis=basis,
                                    no_reset=no_reset, noise=noise)
+
+    # Pauli twirling (randomized compiling): wrap every CX with random Pauli
+    # layers. Logically identity (so detectors/decoding are unchanged), but it
+    # averages coherent hardware errors into stochastic ones. One seed = one
+    # randomized instance; pool several instances for the twirl average.
+    if twirl_seed is not None:
+        from twirling import twirl_circuit
+        stim_circ = twirl_circuit(stim_circ, twirl_seed)
+
     experiment = stim_to_detector_experiment(stim_circ, no_reset=no_reset)
 
     # Rewritten no-reset Stim circuit; its detectors are already in the
