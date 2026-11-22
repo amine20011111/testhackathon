@@ -53,14 +53,40 @@ from typing import Optional
 #  1.  STIM CIRCUIT GENERATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-#: Default noise model matching IQM Emerald typical gate error rates (~0.1-0.5%).
-#: Adjust these based on your latest calibration data from Resonance.
+#: Default (uniform) noise model — every channel the same strength.
+#: A simple baseline; real hardware has much higher readout than gate error.
 DEFAULT_NOISE = dict(
     after_clifford_depolarization  = 0.003,
     after_reset_flip_probability   = 0.003,
     before_measure_flip_probability= 0.003,
     before_round_data_depolarization = 0.003,
 )
+
+
+def si1000_noise(p: float = 0.01) -> dict:
+    """Superconducting-inspired (SI1000) noise model (Gidney & Fowler 2021),
+    expressed through Stim's generated-circuit knobs.
+
+    SI1000 is **readout-dominant**: cheap 1q gates, expensive measurement, and
+    idle noise during the long measurement window. Exact SI1000 rates are
+    p1=p/10, p2=p, p_meas=5p, p_reset=2p, p_idle=2p. Stim's `generated` applies
+    one depolarizing rate to Clifford gates (so 1q is folded into the gate term,
+    a minor over-weight of the small 1q errors); the readout 5x, reset 2x and
+    idle 2x asymmetry — the feature that actually distinguishes SI1000 from the
+    uniform model — is reproduced exactly. Used only as a DECODER prior (it sets
+    the matching-graph edge weights; it is never what runs on hardware).
+    """
+    return dict(
+        after_clifford_depolarization    = p,        # 2q (CZ) gate error
+        before_measure_flip_probability  = 5 * p,    # readout — dominant term
+        after_reset_flip_probability     = 2 * p,    # init error
+        before_round_data_depolarization = 2 * p,    # idle during the round
+    )
+
+
+#: SI1000 prior at p = 1% (readout 5%, gate 1%, reset 2%) — matches the scale
+#: the Qiskit-track solution uses for its decoder prior.
+SI1000_NOISE = si1000_noise(0.01)
 
 
 def make_stim_circuit(

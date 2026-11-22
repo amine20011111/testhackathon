@@ -1,13 +1,10 @@
-"""Final fair comparison: my Qrisp pipeline vs friend's Qiskit pipeline.
+"""Final fair comparison PDF: Qrisp (ours) vs Qiskit (friend) on IQM Emerald,
+now with a MATCHED SI1000 decoder prior on both sides.
 
-Both run FRESH on IQM Emerald in the same session (same calibration window),
-identical parameters: d=3 rotated surface code, no-reset, native CZ, 0 SWAP,
-DD on, Z-memory, rounds 1-5, 4000 shots. Each decoded with the same decoder
-algorithms (MWPM, correlated MWPM, BP+OSD).
-
-My data:     results_qrisp/cmp_mine_summary.json   (uniform DEM prior)
-Friend data: friend_repo/.../decoder_comparison.json (SI1000 prior; also calibrated)
-Both are read live from disk.
+Reads from disk:
+  results_qrisp/cmp_si1000_summary.json        (eps_L: mine uniform / mine SI1000 / friend SI1000)
+  results_qrisp/cmp_mine_si1000_perround.json  (our per-round P_L, both priors)
+  friend_repo/.../decoder_comparison.json       (friend per-round P_L, SI1000)
 """
 import json
 import os
@@ -23,99 +20,98 @@ FRIEND_JSON = (r"C:\Users\amoun\AppData\Local\Temp\claude\02fbd0915ffd2ee4"
                r"\84b99e58-147f-409d-bece-816c09036196\scratchpad\friend_repo"
                r"\results\figures\decoder_comparison.json")
 ROUNDS = np.array([1, 2, 3, 4, 5])
+DECS = ["none", "mwpm", "correlated", "bposd"]
+LBL = {"none": "no corr.", "mwpm": "MWPM", "correlated": "corr. MWPM", "bposd": "BP+OSD"}
 
 
 def _model(n, A, eps):
     return 0.5 * (1 - A * (1 - 2 * eps) ** n)
 
+def wfit(r, p, shots=4000):
+    r = np.asarray(r, float); p = np.asarray(p, float)
+    s = np.maximum(np.sqrt(p * (1 - p) / shots), 0.5 / shots)
+    (A, eps), _ = __import__("scipy.optimize", fromlist=["curve_fit"]).curve_fit(
+        _model, r, p, p0=[1, 0.05], sigma=s, absolute_sigma=True,
+        bounds=([0, 0], [2, 0.5]), maxfev=10000)
+    return A, eps
 
-# ── mine (Qrisp) ────────────────────────────────────────────────────────────
-mine = json.load(open(os.path.join(OUT, "cmp_mine_summary.json")))["results"]
-# ── friend (Qiskit), SI1000 prior rows ──────────────────────────────────────
-fr_all = json.load(open(FRIEND_JSON))
-fr = {r["decoder"]: r for r in fr_all if r["prior"] in ("-", "si1000")}
-
-decoders = ["none", "mwpm", "correlated", "bposd"]
-labels = {"none": "no correction", "mwpm": "MWPM", "correlated": "correlated MWPM",
-          "bposd": "BP+OSD"}
-colors = {"none": "#7f7f7f", "mwpm": "#1f77b4", "correlated": "#2ca02c", "bposd": "#d62728"}
+summ = json.load(open(os.path.join(OUT, "cmp_si1000_summary.json")))          # eps in %
+per = json.load(open(os.path.join(OUT, "cmp_mine_si1000_perround.json")))
+fr = {r["decoder"]: r for r in json.load(open(FRIEND_JSON)) if r["prior"] in ("-", "si1000")}
 
 with PdfPages(PDF) as pdf:
     fig = plt.figure(figsize=(11.5, 8.5))
-    fig.suptitle("FRESH same-session IQM Emerald run — Qrisp (mine) vs Qiskit (friend)\n"
-                 "d=3, no-reset, native CZ, 0 SWAP, DD on, Z-memory, rounds 1-5, 4000 shots",
-                 fontsize=13, fontweight="bold")
+    fig.suptitle("IQM Emerald, same session — Qrisp (ours) vs Qiskit (friend), MATCHED SI1000 prior\n"
+                 "d=3, no-reset, native CZ, 0 SWAP, DD on, Z, rounds 1-5, 4000 shots",
+                 fontsize=12.5, fontweight="bold")
 
-    # (1) P_L vs rounds, both pipelines, correlated + bposd
+    # (1) P_L vs rounds, matched SI1000 prior
     ax1 = fig.add_subplot(2, 2, 1)
-    xs = np.linspace(1, 5, 200)
-    for dec in ["mwpm", "bposd"]:
-        pm = np.array(mine[dec]["p_l"])
+    for dec, col in [("mwpm", "#1f77b4"), ("bposd", "#d62728")]:
+        pm = np.array(per["mine_si1000"][dec])
         pf = np.array(fr[dec]["p_l"])
-        ax1.plot(ROUNDS, pm, "o-", color=colors[dec], ms=5,
-                 label=f"mine {labels[dec]} (ε={100*mine[dec]['eps']:.2f}%)")
-        ax1.plot(ROUNDS, pf, "s--", color=colors[dec], ms=5, alpha=.6,
-                 label=f"friend {labels[dec]} (ε={100*fr[dec]['eps']:.2f}%)")
+        Am, em = wfit(ROUNDS, pm); Af, ef = wfit(ROUNDS, pf)
+        xs = np.linspace(1, 5, 200)
+        ax1.plot(ROUNDS, pm, "o", color=col, ms=5)
+        ax1.plot(xs, _model(xs, Am, em), "-", color=col, alpha=.8,
+                 label=f"mine {LBL[dec]} (ε={100*em:.2f}%)")
+        ax1.plot(ROUNDS, pf, "s", color=col, ms=5, mfc="none")
+        ax1.plot(xs, _model(xs, Af, ef), "--", color=col, alpha=.6,
+                 label=f"friend {LBL[dec]} (ε={100*ef:.2f}%)")
     ax1.set_xlabel("rounds n"); ax1.set_ylabel(r"$P_L$")
-    ax1.set_title("P_L vs rounds (solid=mine, dashed=friend)")
+    ax1.set_title("P_L vs rounds (SI1000 prior; ●/— mine, □/-- friend)")
     ax1.set_xticks(ROUNDS); ax1.grid(alpha=.3); ax1.legend(fontsize=7)
 
-    # (2) eps_L bars per decoder
+    # (2) eps_L: 3 bars per decoder
     ax2 = fig.add_subplot(2, 2, 2)
-    x = np.arange(len(decoders)); w = 0.38
-    me = [100 * mine[d]["eps"] for d in decoders]
-    fe = [100 * fr[d]["eps"] for d in decoders]
-    me_e = [100 * mine[d]["eps_err"] for d in decoders]
-    fe_e = [100 * fr[d]["eps_err"] for d in decoders]
-    ax2.bar(x - w/2, me, w, yerr=me_e, capsize=3, color="#1f77b4", label="mine (Qrisp)")
-    ax2.bar(x + w/2, fe, w, yerr=fe_e, capsize=3, color="#d62728", label="friend (Qiskit)")
-    for i, (m, f) in enumerate(zip(me, fe)):
-        ax2.text(i - w/2, m, f"{m:.2f}", ha="center", va="bottom", fontsize=7)
-        ax2.text(i + w/2, f, f"{f:.2f}", ha="center", va="bottom", fontsize=7)
-    ax2.set_xticks(x, [labels[d] for d in decoders], rotation=20, fontsize=8)
+    x = np.arange(len(DECS)); w = 0.27
+    mu = [summ[d]["mine_uniform"] for d in DECS]
+    ms = [summ[d]["mine_si1000"] for d in DECS]
+    ff = [summ[d]["friend_si1000"] for d in DECS]
+    ax2.bar(x - w, mu, w, color="#9ecae1", label="mine (uniform)")
+    ax2.bar(x,     ms, w, color="#1f77b4", label="mine (SI1000)")
+    ax2.bar(x + w, ff, w, color="#d62728", label="friend (SI1000)")
+    for i in range(len(DECS)):
+        for dx, v in [(-w, mu[i]), (0, ms[i]), (w, ff[i])]:
+            ax2.text(i + dx, v, f"{v:.2f}", ha="center", va="bottom", fontsize=6.3)
+    ax2.set_xticks(x, [LBL[d] for d in DECS], fontsize=8)
     ax2.set_ylabel(r"$\varepsilon_L$ per round (%)")
-    ax2.set_title("Logical error rate per decoder"); ax2.legend(fontsize=8); ax2.grid(alpha=.3, axis="y")
+    ax2.set_title("ε_L by decoder & prior"); ax2.legend(fontsize=7.5); ax2.grid(alpha=.3, axis="y")
 
     # (3) table
     ax3 = fig.add_subplot(2, 2, 3); ax3.axis("off")
-    rows = [["decoder", "MINE (Qrisp)", "FRIEND (Qiskit)"]]
-    for d in decoders:
-        rows.append([labels[d], f"{100*mine[d]['eps']:.2f} ± {100*mine[d]['eps_err']:.2f}%",
-                     f"{100*fr[d]['eps']:.2f} ± {100*fr[d]['eps_err']:.2f}%"])
-    rows += [["prior", "uniform", "SI1000"],
-             ["2q gates/round", "24 (19 at r1)", "24"],
-             ["SWAPs", "0", "0"],
-             ["qubit patch", "auto vf2pp (17)", "VF2+cal scan (17)"]]
-    t = ax3.table(cellText=rows, cellLoc="left", loc="center",
-                  colWidths=[0.34, 0.33, 0.33])
-    t.auto_set_font_size(False); t.set_fontsize(8.5); t.scale(1, 1.5)
-    for c in range(3):
+    rows = [["decoder", "mine uniform", "mine SI1000", "friend SI1000"]]
+    for d in DECS:
+        rows.append([LBL[d], f"{summ[d]['mine_uniform']:.2f}%",
+                     f"{summ[d]['mine_si1000']:.2f}%", f"{summ[d]['friend_si1000']:.2f}%"])
+    t = ax3.table(cellText=rows, cellLoc="center", loc="center",
+                  colWidths=[0.24, 0.26, 0.25, 0.25])
+    t.auto_set_font_size(False); t.set_fontsize(8.2); t.scale(1, 1.5)
+    for c in range(4):
         t[(0, c)].set_facecolor("#2c3e50"); t[(0, c)].set_text_props(color="w", weight="bold")
-    ax3.set_title("ε_L per round (same session, same params)", fontsize=10)
+    ax3.set_title("ε_L per round (%)  — lower is better", fontsize=10)
 
-    # (4) explanation
+    # (4) interpretation
     ax4 = fig.add_subplot(2, 2, 4); ax4.axis("off")
-    best_m = min(100*mine[d]["eps"] for d in decoders if d != "none")
-    best_f = min(100*fr[d]["eps"] for d in decoders if d != "none")
+    bm = min(summ[d]["mine_si1000"] for d in DECS if d != "none")
+    bf = min(summ[d]["friend_si1000"] for d in DECS if d != "none")
     txt = [
-        "WHY THEY ARE CLOSE",
+        "SI1000 PRIOR (matched on both sides)",
         "",
-        "Both run the identical physics on the identical chip:",
-        "d=3 rotated surface code, no-reset detectors, native",
-        "H+CZ, 0 SWAP, DD on. The logical error rate is set by",
-        "Emerald's physical gate/readout/idle errors — NOT by",
-        "whether the circuit is written in Qrisp or Qiskit.",
-        "The framework is just the pen; the chip does the same",
-        "operations either way.",
+        "SI1000 weights the decoder graph realistically:",
+        "readout error 5x the gate error (vs uniform, where",
+        "all errors are equal). This mainly re-weights the",
+        "time-like (round-to-round) matching edges.",
         "",
-        "The only framework-independent levers that move ε_L:",
-        "  • which 17 qubits (patch)   • the decoder",
-        "  • the DEM prior (noise model for decoder weights)",
+        f"Best decoded ε_L (SI1000):  mine {bm:.2f}%   friend {bf:.2f}%",
         "",
-        f"Best decoded ε_L:  mine {best_m:.2f}%   friend {best_f:.2f}%",
-        "Difference is within patch/calibration variation,",
-        "not a Qrisp-vs-Qiskit effect. Upgrading the decoder",
-        "(MWPM→BP+OSD) helps BOTH by ~0.4%.",
+        "With the prior now matched, the two pipelines agree",
+        "even more closely — the remaining gap is the qubit",
+        "patch + shot noise, NOT Qrisp-vs-Qiskit and NOT the",
+        "noise model. Switching our prior uniform -> SI1000",
+        "moves ε_L only within the error bars: the decoder",
+        "ALGORITHM (MWPM -> BP+OSD) matters more than the prior",
+        "on this clean d=3 patch.",
     ]
     ax4.text(0.0, 1.0, "\n".join(txt), va="top", ha="left", family="monospace",
              fontsize=8.6, transform=ax4.transAxes)
@@ -123,6 +119,7 @@ with PdfPages(PDF) as pdf:
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     pdf.savefig(fig); plt.close(fig)
 
-print("MINE  :", {d: round(100*mine[d]["eps"], 2) for d in decoders})
-print("FRIEND:", {d: round(100*fr[d]["eps"], 2) for d in decoders})
 print("Wrote", PDF)
+for d in DECS:
+    print(f"  {d:>11}: mine_uniform {summ[d]['mine_uniform']:.2f}  "
+          f"mine_SI1000 {summ[d]['mine_si1000']:.2f}  friend_SI1000 {summ[d]['friend_si1000']:.2f}")
